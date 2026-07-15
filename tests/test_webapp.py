@@ -91,10 +91,22 @@ def _client(tmp_path, monkeypatch):
     return TestClient(api.app)
 
 
+def _wait_done(client, job_id, timeout=10.0):
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] != "running":
+            return job
+        time.sleep(0.05)
+    raise AssertionError("job no terminó a tiempo")
+
+
 def test_api_process_and_jobs(tmp_path, monkeypatch):
     src = tmp_path / "imgs"
     src.mkdir()
-    Image.new("RGB", (100, 60), (0, 0, 0)).save(src / "a.png")
+    for name in ("a.png", "b.png", "c.png"):
+        Image.new("RGB", (100, 60), (0, 0, 0)).save(src / name)
     out = tmp_path / "out"
 
     client = _client(tmp_path, monkeypatch)
@@ -105,6 +117,12 @@ def test_api_process_and_jobs(tmp_path, monkeypatch):
     assert r.status_code == 200, r.text
     job = r.json()
     assert job["mode"] == "folder"
+    assert job["status"] == "running"            # responde de inmediato
+    assert job["progress"]["total"] == 3
+
+    done = _wait_done(client, job["id"])
+    assert done["status"] == "success"
+    assert done["progress"] == {"done": 3, "total": 3}
     assert (out / "a.png").exists()
 
     assert len(client.get("/api/jobs").json()["jobs"]) == 1

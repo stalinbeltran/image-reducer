@@ -65,8 +65,12 @@ La app web (servida en `/`) permite:
   la app rechaza destinos que se solapen con el origen).
 - Ajustar toda la **configuración** (tamaño, letterbox, gris, blur, normalizar,
   padding, resample) y guardarla como **presets** reutilizables.
+- **Procesamiento en segundo plano con barra de progreso**: `/api/process`
+  responde de inmediato con el job en estado `running`; la UI hace polling y
+  muestra el avance `done/total` tanto en el panel como en la fila del registro.
 - **Registro de datasets generados**: cada procesamiento queda guardado con su
-  origen, destino, config, modo y conteos, y se muestra en una tabla.
+  origen, destino, config, modo, estado, progreso y conteos, y se muestra en una
+  tabla.
 - **CRUD completo**: editar/eliminar entradas del registro (con opción de borrar
   también los archivos de salida) y crear/editar/eliminar presets.
 
@@ -81,8 +85,8 @@ El registro se persiste en `IMAGE_REDUCER_DATA` (por defecto `<repo>/.appdata/`)
 | POST   | `/infer/preprocess-json`   | igual, pero devuelve JSON `{transform, image_base64}`          |
 | GET    | `/api/fs`, `/api/fs/roots` | navegación del sistema de archivos del servidor               |
 | GET    | `/api/fs/inspect`          | autodetecta el modo de una ruta (image/dataset/folder)        |
-| POST   | `/api/process`             | procesa origen → destino (valida rutas) y registra el job     |
-| GET/PATCH/DELETE | `/api/jobs[/{id}]` | CRUD del registro de datasets generados                       |
+| POST   | `/api/process`             | lanza el job en segundo plano; devuelve el job en `running`   |
+| GET/PATCH/DELETE | `/api/jobs[/{id}]` | CRUD del registro; el GET incluye `status` y `progress` en vivo |
 | GET/POST/PATCH/DELETE | `/api/presets[/{id}]` | CRUD de presets de configuración                       |
 | POST   | `/datasets/process`, `/folders/process` | endpoints legados por lotes (sin registro)       |
 

@@ -27,7 +27,8 @@ from .dataset import IMAGE_EXTS, process_dataset, process_folder
 from .geometry import ResizeTransform
 from .pipeline import process_for_inference
 from .registry import Registry
-from .service import PathSafetyError, detect_mode, run_job, validate_paths
+from .runner import JobManager
+from .service import PathSafetyError, detect_mode, validate_paths
 
 app = FastAPI(
     title="image-reducer",
@@ -36,6 +37,7 @@ app = FastAPI(
 )
 
 registry = Registry()
+manager = JobManager(registry)
 _WEBUI = Path(__file__).resolve().parent / "webui"
 
 
@@ -176,32 +178,22 @@ class ProcessRequest(BaseModel):
 
 @app.post("/api/process")
 def api_process(req: ProcessRequest) -> dict:
-    input_path = Path(req.input)
-    output_dir = Path(req.output)
+    """Lanza el procesamiento en segundo plano y devuelve el job en 'running'.
+    La UI hace polling de `GET /api/jobs/{id}` para la barra de progreso."""
     try:
         config = ReduceConfig.from_dict(req.config or {})
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"Configuración inválida: {e}")
 
     try:
-        summary = run_job(input_path, output_dir, config, req.mode, req.recursive)
+        return manager.start(req.input, req.output, config, req.mode,
+                             req.recursive, req.label)
     except PathSafetyError as e:
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-
-    job = registry.create_job({
-        "label": req.label,
-        "mode": summary.get("mode"),
-        "input": str(input_path.resolve()),
-        "output": str(output_dir.resolve()),
-        "config": config.to_dict(),
-        "status": "success",
-        "summary": summary,
-    })
-    return job
 
 
 class JobPatch(BaseModel):
@@ -211,7 +203,7 @@ class JobPatch(BaseModel):
 
 @app.get("/api/jobs")
 def jobs_list() -> dict:
-    return {"jobs": registry.list_jobs()}
+    return {"jobs": manager.overlay_all(registry.list_jobs())}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -219,7 +211,7 @@ def jobs_get(job_id: str) -> dict:
     job = registry.get_job(job_id)
     if not job:
         raise HTTPException(404, "Job no encontrado")
-    return job
+    return manager.overlay(job)
 
 
 @app.patch("/api/jobs/{job_id}")

@@ -78,6 +78,7 @@ class Registry:
                 "output": job.get("output"),
                 "config": job.get("config"),
                 "status": job.get("status", "success"),
+                "progress": job.get("progress"),
                 "summary": job.get("summary"),
                 "error": job.get("error"),
                 "created_at": now,
@@ -86,6 +87,36 @@ class Registry:
             data["jobs"].append(job)
             self._write(data)
             return job
+
+    def set_job_state(self, job_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
+        """Actualiza estado/progreso/summary/error de un job (uso interno)."""
+        allowed = {"status", "progress", "summary", "error"}
+        with self._lock:
+            data = self._read()
+            for job in data["jobs"]:
+                if job["id"] == job_id:
+                    for k, v in fields.items():
+                        if k in allowed:
+                            job[k] = v
+                    job["updated_at"] = _utcnow()
+                    self._write(data)
+                    return job
+        return None
+
+    def mark_stale_running(self) -> int:
+        """Marca como error los jobs que quedaron 'running' (p.ej. tras reinicio)."""
+        with self._lock:
+            data = self._read()
+            n = 0
+            for job in data["jobs"]:
+                if job.get("status") == "running":
+                    job["status"] = "error"
+                    job["error"] = "Interrumpido (servidor reiniciado)."
+                    job["updated_at"] = _utcnow()
+                    n += 1
+            if n:
+                self._write(data)
+            return n
 
     def update_job(self, job_id: str, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         allowed = {"label", "notes"}

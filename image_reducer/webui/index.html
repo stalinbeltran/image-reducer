@@ -75,6 +75,12 @@
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--muted);
           border-top-color:var(--accent); border-radius:50%; animation:s .7s linear infinite; }
   @keyframes s { to{ transform:rotate(360deg);} }
+  .bar { height:8px; background:var(--panel2); border-radius:6px; overflow:hidden;
+         border:1px solid var(--line); min-width:120px; }
+  .bar > i { display:block; height:100%; width:0%; background:var(--accent);
+             transition:width .25s ease; }
+  .status.error { color:var(--danger); }
+  .status.success { color:var(--accent2); }
 </style>
 </head>
 <body>
@@ -273,23 +279,57 @@ async function deletePreset(){
   await api('/api/presets/'+id,{method:'DELETE'}); await loadPresets();
 }
 
-/* ---------- process ---------- */
+/* ---------- process (background + progreso) ---------- */
+let pollTimer=null;
+function progressBar(p){
+  const done=(p&&p.done)||0, total=(p&&p.total)||0;
+  const pct = total ? Math.round(done/total*100) : 0;
+  return `<div class="bar"><i style="width:${pct}%"></i></div><div class="hint">${done}/${total} (${pct}%)</div>`;
+}
 async function process(){
   const input=$('src').value.trim(), output=$('dst').value.trim();
   const msg=$('procMsg'); msg.className='msg'; msg.textContent='';
   if(!input||!output){ msg.className='msg err'; msg.textContent='Indica origen y destino.'; return; }
   $('goBtn').disabled=true; $('goSpin').innerHTML='<span class="spin"></span>';
+  let job;
   try{
-    const job = await api('/api/process',{method:'POST',headers:{'Content-Type':'application/json'},
+    job = await api('/api/process',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({input, output, recursive:$('recursive').checked,
         label:$('label').value.trim()||null, config:getConfig()})});
-    const s=job.summary||{};
-    msg.className='msg ok';
-    msg.textContent=`Procesado (${job.mode}): ${s.images||0} imágenes → ${job.output}`;
-    $('label').value='';
-    await loadJobs();
-  }catch(e){ msg.className='msg err'; msg.textContent=e.message; }
-  finally{ $('goBtn').disabled=false; $('goSpin').innerHTML=''; }
+  }catch(e){
+    msg.className='msg err'; msg.textContent=e.message;
+    $('goBtn').disabled=false; $('goSpin').innerHTML=''; return;
+  }
+  msg.className='msg'; msg.style.display='block';
+  msg.innerHTML='Procesando… '+progressBar(job.progress);
+  await loadJobs();
+  pollJob(job.id);
+}
+function pollJob(id){
+  clearInterval(pollTimer);
+  pollTimer=setInterval(async ()=>{
+    let job;
+    try{ job = await api('/api/jobs/'+id); }
+    catch(e){ clearInterval(pollTimer); return; }
+    const msg=$('procMsg');
+    if(job.status==='running'){
+      msg.className='msg'; msg.style.display='block';
+      msg.innerHTML='Procesando… '+progressBar(job.progress);
+      loadJobs();
+    }else{
+      clearInterval(pollTimer);
+      $('goBtn').disabled=false; $('goSpin').innerHTML='';
+      if(job.status==='success'){
+        const s=job.summary||{};
+        msg.className='msg ok';
+        msg.textContent=`Procesado (${job.mode}): ${s.images||0} imágenes → ${job.output}`;
+        $('label').value='';
+      }else{
+        msg.className='msg err'; msg.textContent=job.error||'Error en el procesamiento.';
+      }
+      loadJobs();
+    }
+  }, 500);
 }
 
 /* ---------- jobs registry (CRUD) ---------- */
@@ -301,13 +341,21 @@ function renderJobs(jobs){
   if(!jobs.length){ box.innerHTML='<div class="empty">Aún no hay datasets generados.</div>'; return; }
   const rows = jobs.map(j=>{
     const s=j.summary||{};
+    let stateCell;
+    if(j.status==='running'){
+      stateCell = progressBar(j.progress);
+    }else if(j.status==='error'){
+      stateCell = `<span class="status error">error</span><div class="hint">${(j.error||'').slice(0,60)}</div>`;
+    }else{
+      stateCell = `<div class="hint">${s.images||0} img${s.masks?(' · '+s.masks+' masks'):''}</div>`;
+    }
     return `<tr>
       <td>
         <input type="text" value="${(j.label||'').replace(/"/g,'&quot;')}" data-id="${j.id}"
                onchange="renameJob('${j.id}', this.value)" placeholder="(sin etiqueta)" style="width:130px">
         <div class="hint">${new Date(j.created_at).toLocaleString()}</div>
       </td>
-      <td><span class="badge ${j.mode}">${j.mode}</span><div class="hint">${s.images||0} img${s.masks?(' · '+s.masks+' masks'):''}</div></td>
+      <td><span class="badge ${j.mode}">${j.mode}</span><div style="margin-top:4px">${stateCell}</div></td>
       <td class="path">${j.input}</td>
       <td class="path">${j.output}</td>
       <td>

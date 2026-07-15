@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PIL import Image
 
 from .config import ReduceConfig
 from .dataset import IMAGE_EXTS, process_dataset, process_folder
 from .pipeline import process_for_inference
+
+ProgressFn = Callable[[int, int], None]
 
 
 class PathSafetyError(ValueError):
@@ -69,8 +71,25 @@ def validate_paths(input_path: Path, output_dir: Path) -> None:
             )
 
 
+def count_items(input_path: Path, mode: str, recursive: bool = False) -> int:
+    """Cuenta cuántas imágenes procesará el job (para la barra de progreso)."""
+    if mode == "image":
+        return 1
+    if mode == "dataset":
+        with (input_path / "labels.jsonl").open(encoding="utf-8") as fh:
+            return sum(1 for line in fh if line.strip())
+    if mode == "folder":
+        pattern = "**/*" if recursive else "*"
+        return sum(1 for p in input_path.glob(pattern)
+                   if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
+    return 0
+
+
 def process_single_image(
-    input_file: str | Path, output_dir: str | Path, config: ReduceConfig
+    input_file: str | Path,
+    output_dir: str | Path,
+    config: ReduceConfig,
+    progress: Optional[ProgressFn] = None,
 ) -> Dict[str, Any]:
     """Procesa una sola imagen y guarda el PNG + su ResizeTransform."""
     input_file = Path(input_file)
@@ -86,6 +105,8 @@ def process_single_image(
     (output_dir / (input_file.stem + ".transform.json")).write_text(
         json.dumps(transform.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    if progress:
+        progress(1, 1)
     return {
         "mode": "image",
         "input": str(input_file),
@@ -102,10 +123,12 @@ def run_job(
     config: ReduceConfig,
     mode: Optional[str] = None,
     recursive: bool = False,
+    progress: Optional[ProgressFn] = None,
 ) -> Dict[str, Any]:
     """Ejecuta un procesamiento validando rutas y despachando por modo.
 
-    `mode` se autodetecta si no se pasa. Devuelve el resumen del pipeline.
+    `mode` se autodetecta si no se pasa. `progress(done, total)` se invoca por
+    cada imagen procesada. Devuelve el resumen del pipeline.
     """
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -116,9 +139,9 @@ def run_job(
     mode = mode or detect_mode(input_path)
 
     if mode == "image":
-        return process_single_image(input_path, output_dir, config)
+        return process_single_image(input_path, output_dir, config, progress)
     if mode == "dataset":
-        return process_dataset(input_path, output_dir, config)
+        return process_dataset(input_path, output_dir, config, progress)
     if mode == "folder":
-        return process_folder(input_path, output_dir, config, recursive)
+        return process_folder(input_path, output_dir, config, recursive, progress)
     raise ValueError(f"Modo desconocido: {mode}")
