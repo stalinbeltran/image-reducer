@@ -50,23 +50,45 @@ letterbox), `--no-grayscale`, `--blur R`, `--normalize`, `--pad-color 0-255`,
 > al preprocesar imágenes de inferencia. Si difieren, la red verá entradas que no
 > coinciden con las de entrenamiento.
 
-## API HTTP
+## App web
 
 ```bash
-uvicorn image_reducer.api:app --reload
+image-reducer-serve            # o: uvicorn image_reducer.api:app --reload
+# abre http://127.0.0.1:8000
 ```
 
-| Método | Ruta                       | Uso                                                        |
-|--------|----------------------------|------------------------------------------------------------|
-| GET    | `/healthz`                 | comprobación de salud                                      |
+La app web (servida en `/`) permite:
+
+- **Seleccionar origen** navegando el disco del servidor: una imagen suelta, una
+  carpeta plana o un dataset (detecta `labels.jsonl`). El modo se autodetecta.
+- **Definir el destino** (obligatoriamente **fuera de la ubicación de origen**;
+  la app rechaza destinos que se solapen con el origen).
+- Ajustar toda la **configuración** (tamaño, letterbox, gris, blur, normalizar,
+  padding, resample) y guardarla como **presets** reutilizables.
+- **Registro de datasets generados**: cada procesamiento queda guardado con su
+  origen, destino, config, modo y conteos, y se muestra en una tabla.
+- **CRUD completo**: editar/eliminar entradas del registro (con opción de borrar
+  también los archivos de salida) y crear/editar/eliminar presets.
+
+El registro se persiste en `IMAGE_REDUCER_DATA` (por defecto `<repo>/.appdata/`).
+
+## API HTTP
+
+| Método | Ruta                       | Uso                                                            |
+|--------|----------------------------|----------------------------------------------------------------|
+| GET    | `/healthz`                 | comprobación de salud                                          |
 | POST   | `/infer/preprocess`        | sube imagen → PNG procesado; transform en `X-Reducer-Transform` |
-| POST   | `/infer/preprocess-json`   | igual, pero devuelve JSON `{transform, image_base64}`      |
-| POST   | `/datasets/process`        | procesa un dataset del disco del servidor                  |
-| POST   | `/folders/process`         | procesa una carpeta plana del disco del servidor           |
+| POST   | `/infer/preprocess-json`   | igual, pero devuelve JSON `{transform, image_base64}`          |
+| GET    | `/api/fs`, `/api/fs/roots` | navegación del sistema de archivos del servidor               |
+| GET    | `/api/fs/inspect`          | autodetecta el modo de una ruta (image/dataset/folder)        |
+| POST   | `/api/process`             | procesa origen → destino (valida rutas) y registra el job     |
+| GET/PATCH/DELETE | `/api/jobs[/{id}]` | CRUD del registro de datasets generados                       |
+| GET/POST/PATCH/DELETE | `/api/presets[/{id}]` | CRUD de presets de configuración                       |
+| POST   | `/datasets/process`, `/folders/process` | endpoints legados por lotes (sin registro)       |
 
 Los parámetros de configuración van como query params en los endpoints de
 inferencia (`?width=320&height=320&blur_radius=0.5&...`) y como objeto `config`
-en el body JSON de los endpoints por lotes.
+en el body JSON de `/api/process`.
 
 ```bash
 curl -X POST "http://localhost:8000/infer/preprocess?width=320&height=320" \

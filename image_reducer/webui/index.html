@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>image-reducer</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+          --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent2:#22c55e;
+          --danger:#ef4444; --warn:#f59e0b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:14px 22px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header .tag { color:var(--muted); font-size:12px; }
+  main { display:grid; grid-template-columns:minmax(360px,1fr) minmax(420px,1.4fr);
+         gap:18px; padding:18px 22px; align-items:start; }
+  @media (max-width:900px){ main{ grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:16px 18px; }
+  .card h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text], input[type=number], select {
+      width:100%; padding:8px 10px; background:var(--panel2); color:var(--txt);
+      border:1px solid var(--line); border-radius:6px; font-size:13px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  .inline { display:flex; gap:8px; align-items:center; }
+  .checks { display:flex; flex-wrap:wrap; gap:14px; margin-top:8px; }
+  .checks label { display:flex; align-items:center; gap:6px; margin:0; color:var(--txt); font-size:13px; }
+  .checks input { width:auto; }
+  button { cursor:pointer; border:none; border-radius:6px; padding:8px 14px;
+           font-size:13px; font-weight:600; background:var(--panel2); color:var(--txt);
+           border:1px solid var(--line); }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#04283a; border-color:var(--accent); }
+  button.ok { background:var(--accent2); color:#04220f; border-color:var(--accent2); }
+  button.danger { background:transparent; color:var(--danger); border-color:var(--danger); }
+  button.sm { padding:4px 8px; font-size:12px; }
+  .pathbox { display:flex; gap:8px; }
+  .pathbox input { flex:1; }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:20px; font-size:11px;
+           font-weight:600; }
+  .badge.dataset{ background:#0e3a4f; color:var(--accent); }
+  .badge.folder{ background:#3a2f0e; color:var(--warn); }
+  .badge.image{ background:#123a1e; color:var(--accent2); }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:6px; font-size:13px; display:none; }
+  .msg.err{ background:#3b1111; color:#fecaca; display:block; }
+  .msg.ok{ background:#0f2e18; color:#bbf7d0; display:block; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 8px; border-bottom:1px solid var(--line);
+          font-size:12px; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  td.path { font-family:ui-monospace,monospace; word-break:break-all; max-width:220px; color:var(--muted); }
+  .empty { color:var(--muted); padding:14px 4px; }
+  /* modal */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none;
+             align-items:center; justify-content:center; z-index:10; }
+  .overlay.on { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           width:min(680px,92vw); max-height:86vh; display:flex; flex-direction:column; }
+  .modal header { border-bottom:1px solid var(--line); }
+  .modal .body { padding:12px 16px; overflow:auto; }
+  .crumbs { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; margin-bottom:10px; }
+  .crumbs button { padding:2px 8px; font-size:12px; font-weight:500; }
+  .fsitem { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; }
+  .fsitem:hover { background:var(--panel2); }
+  .fsitem .ico { width:18px; text-align:center; }
+  .modal footer { border-top:1px solid var(--line); padding:12px 16px; display:flex;
+                  justify-content:space-between; gap:10px; align-items:center; }
+  .sel { font-size:12px; color:var(--muted); font-family:ui-monospace,monospace; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--muted);
+          border-top-color:var(--accent); border-radius:50%; animation:s .7s linear infinite; }
+  @keyframes s { to{ transform:rotate(360deg);} }
+</style>
+</head>
+<body>
+<header>
+  <h1>image-reducer</h1>
+  <span class="tag">reducción · gris · blur — estandarización para detección de texto</span>
+</header>
+
+<main>
+  <!-- ================= Nuevo procesamiento ================= -->
+  <section class="card">
+    <h2>Nuevo procesamiento</h2>
+
+    <label>Origen (archivo o carpeta de muestras)</label>
+    <div class="pathbox">
+      <input type="text" id="src" placeholder="Selecciona o pega una ruta…">
+      <button onclick="openFs('source')">Explorar</button>
+    </div>
+    <div class="hint" id="srcInfo"></div>
+
+    <label>Destino (nunca dentro del origen)</label>
+    <div class="pathbox">
+      <input type="text" id="dst" placeholder="Carpeta de salida…">
+      <button onclick="openFs('dest')">Explorar</button>
+    </div>
+    <div class="hint">Consejo: elige una carpeta base y añade un subnombre, ej. <code>…/out/mi_dataset_320</code>.</div>
+
+    <label style="margin-top:16px">Configuración</label>
+    <div class="row">
+      <div><label>Ancho</label><input type="number" id="width" value="320" min="1"></div>
+      <div><label>Alto</label><input type="number" id="height" value="320" min="1"></div>
+      <div><label>Pad (0-255)</label><input type="number" id="pad_color" value="0" min="0" max="255"></div>
+    </div>
+    <div class="row">
+      <div><label>Blur (px)</label><input type="number" id="blur_radius" value="0" min="0" step="0.1"></div>
+      <div><label>Resample</label>
+        <select id="resample">
+          <option value="lanczos">lanczos</option>
+          <option value="bicubic">bicubic</option>
+          <option value="bilinear">bilinear</option>
+          <option value="nearest">nearest</option>
+        </select>
+      </div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="keep_aspect" checked> Letterbox (conservar aspecto)</label>
+      <label><input type="checkbox" id="grayscale" checked> Escala de grises</label>
+      <label><input type="checkbox" id="normalize"> Normalizar contraste</label>
+      <label><input type="checkbox" id="recursive"> Recursivo (carpetas)</label>
+    </div>
+
+    <label style="margin-top:16px">Presets de configuración</label>
+    <div class="inline">
+      <select id="presetSel" onchange="applyPreset()" style="flex:2"></select>
+      <button class="sm" onclick="deletePreset()">Eliminar</button>
+    </div>
+    <div class="inline" style="margin-top:8px">
+      <input type="text" id="presetName" placeholder="Nombre del preset…" style="flex:2">
+      <button class="sm" onclick="savePreset()">Guardar preset</button>
+    </div>
+
+    <label style="margin-top:16px">Etiqueta del resultado (opcional)</label>
+    <input type="text" id="label" placeholder="ej. clean-paragraphs 320 gris">
+
+    <div style="margin-top:16px" class="inline">
+      <button class="primary" id="goBtn" onclick="process()">Procesar</button>
+      <span id="goSpin"></span>
+    </div>
+    <div class="msg" id="procMsg"></div>
+  </section>
+
+  <!-- ================= Registro ================= -->
+  <section class="card">
+    <h2>Datasets generados <button class="sm" style="float:right" onclick="loadJobs()">Refrescar</button></h2>
+    <div id="jobsBox"></div>
+  </section>
+</main>
+
+<!-- ================= Modal FS ================= -->
+<div class="overlay" id="fsOverlay">
+  <div class="modal">
+    <header><h1 id="fsTitle" style="font-size:15px">Explorar</h1></header>
+    <div class="body">
+      <div class="crumbs" id="fsCrumbs"></div>
+      <div id="fsList"></div>
+    </div>
+    <footer>
+      <span class="sel" id="fsSel">—</span>
+      <span class="inline">
+        <button onclick="closeFs()">Cancelar</button>
+        <button class="ok" id="fsPick" onclick="pickCurrent()">Seleccionar carpeta</button>
+      </span>
+    </footer>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const ct = r.headers.get('content-type')||'';
+  const data = ct.includes('json') ? await r.json() : await r.text();
+  if(!r.ok) throw new Error((data && data.detail) || r.statusText);
+  return data;
+}
+function getConfig(){
+  return {
+    width:+$('width').value, height:+$('height').value,
+    keep_aspect:$('keep_aspect').checked, grayscale:$('grayscale').checked,
+    blur_radius:+$('blur_radius').value, normalize:$('normalize').checked,
+    pad_color:+$('pad_color').value, resample:$('resample').value,
+  };
+}
+function setConfig(c){
+  if(!c) return;
+  for(const k of ['width','height','blur_radius','pad_color','resample']) if(k in c) $(k).value=c[k];
+  for(const k of ['keep_aspect','grayscale','normalize']) if(k in c) $(k).checked=!!c[k];
+}
+
+/* ---------- filesystem modal ---------- */
+let fsTarget='source', fsPath=null, fsData=null;
+async function openFs(target){
+  fsTarget=target;
+  $('fsTitle').textContent = target==='source' ? 'Seleccionar origen' : 'Seleccionar carpeta destino';
+  $('fsOverlay').classList.add('on');
+  const start = target==='source' ? $('src').value : $('dst').value;
+  await fsGo(start || null);
+}
+function closeFs(){ $('fsOverlay').classList.remove('on'); }
+async function fsGo(path){
+  fsPath = path;
+  const q = path ? ('?path='+encodeURIComponent(path)) : '';
+  fsData = await api('/api/fs'+q);
+  renderFs();
+}
+function renderFs(){
+  // breadcrumbs / roots
+  const cr = $('fsCrumbs'); cr.innerHTML='';
+  (fsData.roots||[]).forEach(r=>{
+    const b=document.createElement('button'); b.textContent=r; b.onclick=()=>fsGo(r); cr.appendChild(b);
+  });
+  if(fsData.parent){
+    const b=document.createElement('button'); b.textContent='⬆ subir'; b.onclick=()=>fsGo(fsData.parent); cr.appendChild(b);
+  }
+  const list=$('fsList'); list.innerHTML='';
+  (fsData.dirs||[]).forEach(d=>{
+    const el=document.createElement('div'); el.className='fsitem';
+    el.innerHTML=`<span class="ico">📁</span><span>${d.name}</span>${d.is_dataset?'<span class="badge dataset">dataset</span>':''}`;
+    el.onclick=()=>fsGo(d.path); list.appendChild(el);
+  });
+  if(fsTarget==='source'){
+    (fsData.files||[]).forEach(f=>{
+      const el=document.createElement('div'); el.className='fsitem';
+      el.innerHTML=`<span class="ico">🖼️</span><span>${f.name}</span>`;
+      el.onclick=()=>{ pickPath(f.path); }; list.appendChild(el);
+    });
+  }
+  $('fsSel').textContent = fsData.path || '—';
+  $('fsPick').style.display = fsData.path ? 'inline-block' : 'none';
+  $('fsPick').textContent = (fsTarget==='source' && fsData.is_dataset) ? 'Usar este dataset' : 'Usar esta carpeta';
+}
+function pickCurrent(){ if(fsData && fsData.path) pickPath(fsData.path); }
+async function pickPath(p){
+  if(fsTarget==='source'){ $('src').value=p; await inspectSource(p); }
+  else { $('dst').value=p; }
+  closeFs();
+}
+async function inspectSource(p){
+  $('srcInfo').innerHTML='<span class="spin"></span>';
+  try{
+    const info = await api('/api/fs/inspect?path='+encodeURIComponent(p));
+    $('srcInfo').innerHTML = `Modo detectado: <span class="badge ${info.mode}">${info.mode}</span>`;
+  }catch(e){ $('srcInfo').textContent = e.message; }
+}
+$('src').addEventListener('change', e=>{ if(e.target.value) inspectSource(e.target.value); });
+
+/* ---------- presets ---------- */
+let presets=[];
+async function loadPresets(){
+  const d = await api('/api/presets'); presets=d.presets;
+  const sel=$('presetSel'); sel.innerHTML='<option value="">— cargar preset —</option>';
+  presets.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
+}
+function applyPreset(){
+  const p=presets.find(x=>x.id===$('presetSel').value); if(p) setConfig(p.config);
+}
+async function savePreset(){
+  const name=$('presetName').value.trim(); if(!name){ alert('Pon un nombre'); return; }
+  await api('/api/presets',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name, config:getConfig()})});
+  $('presetName').value=''; await loadPresets();
+}
+async function deletePreset(){
+  const id=$('presetSel').value; if(!id){ return; }
+  if(!confirm('¿Eliminar preset?')) return;
+  await api('/api/presets/'+id,{method:'DELETE'}); await loadPresets();
+}
+
+/* ---------- process ---------- */
+async function process(){
+  const input=$('src').value.trim(), output=$('dst').value.trim();
+  const msg=$('procMsg'); msg.className='msg'; msg.textContent='';
+  if(!input||!output){ msg.className='msg err'; msg.textContent='Indica origen y destino.'; return; }
+  $('goBtn').disabled=true; $('goSpin').innerHTML='<span class="spin"></span>';
+  try{
+    const job = await api('/api/process',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input, output, recursive:$('recursive').checked,
+        label:$('label').value.trim()||null, config:getConfig()})});
+    const s=job.summary||{};
+    msg.className='msg ok';
+    msg.textContent=`Procesado (${job.mode}): ${s.images||0} imágenes → ${job.output}`;
+    $('label').value='';
+    await loadJobs();
+  }catch(e){ msg.className='msg err'; msg.textContent=e.message; }
+  finally{ $('goBtn').disabled=false; $('goSpin').innerHTML=''; }
+}
+
+/* ---------- jobs registry (CRUD) ---------- */
+async function loadJobs(){
+  const d = await api('/api/jobs'); renderJobs(d.jobs);
+}
+function renderJobs(jobs){
+  const box=$('jobsBox');
+  if(!jobs.length){ box.innerHTML='<div class="empty">Aún no hay datasets generados.</div>'; return; }
+  const rows = jobs.map(j=>{
+    const s=j.summary||{};
+    return `<tr>
+      <td>
+        <input type="text" value="${(j.label||'').replace(/"/g,'&quot;')}" data-id="${j.id}"
+               onchange="renameJob('${j.id}', this.value)" placeholder="(sin etiqueta)" style="width:130px">
+        <div class="hint">${new Date(j.created_at).toLocaleString()}</div>
+      </td>
+      <td><span class="badge ${j.mode}">${j.mode}</span><div class="hint">${s.images||0} img${s.masks?(' · '+s.masks+' masks'):''}</div></td>
+      <td class="path">${j.input}</td>
+      <td class="path">${j.output}</td>
+      <td>
+        <button class="sm danger" onclick="delJob('${j.id}',false)">Quitar</button>
+        <button class="sm danger" onclick="delJob('${j.id}',true)">+archivos</button>
+      </td>
+    </tr>`;
+  }).join('');
+  box.innerHTML=`<table><thead><tr>
+    <th>Etiqueta / fecha</th><th>Modo</th><th>Origen</th><th>Destino</th><th>Acciones</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function renameJob(id, label){
+  await api('/api/jobs/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({label})});
+}
+async function delJob(id, withFiles){
+  const t = withFiles ? '¿Eliminar el registro Y los archivos de salida en disco?'
+                      : '¿Quitar del registro? (los archivos se conservan)';
+  if(!confirm(t)) return;
+  await api('/api/jobs/'+id+'?delete_files='+withFiles,{method:'DELETE'});
+  await loadJobs();
+}
+
+/* ---------- init ---------- */
+loadPresets(); loadJobs();
+</script>
+</body>
+</html>

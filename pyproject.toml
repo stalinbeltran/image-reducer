@@ -24,6 +24,10 @@ dev = [
 
 [project.scripts]
 image-reducer = "image_reducer.cli:main"
+image-reducer-serve = "image_reducer.serve:main"
 
 [tool.setuptools.packages.find]
 include = ["image_reducer*"]
+
+[tool.setuptools.package-data]
+image_reducer = ["webui/*.html"]
