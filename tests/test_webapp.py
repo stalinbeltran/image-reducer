@@ -173,3 +173,36 @@ def test_api_fs_inspect(tmp_path, monkeypatch):
     r = client.get("/api/fs/inspect", params={"path": str(img)})
     assert r.status_code == 200
     assert r.json()["mode"] == "image"
+
+
+def test_api_audit_log(tmp_path, monkeypatch):
+    import json
+    import time
+
+    src = tmp_path / "imgs"
+    src.mkdir()
+    Image.new("RGB", (80, 50), (0, 0, 0)).save(src / "a.png")
+    out = tmp_path / "out"
+
+    client = _client(tmp_path, monkeypatch)
+    job = client.post("/api/process", json={
+        "input": str(src), "output": str(out),
+        "config": {"width": 32, "height": 32}}).json()
+    _wait_done(client, job["id"])
+
+    status = client.get("/api/audit/status").json()
+    assert status["ok"] is True
+    assert status["path"].endswith("audit.log.jsonl")
+
+    # el fichero contiene los eventos de la operación (escritura asíncrona)
+    audit_file = tmp_path / "appdata" / "audit.log.jsonl"
+    events = set()
+    for _ in range(100):
+        if audit_file.exists():
+            events = {json.loads(l)["event"]
+                      for l in audit_file.read_text(encoding="utf-8").splitlines() if l.strip()}
+            if {"process.start", "process.success"} <= events:
+                break
+        time.sleep(0.02)
+    assert "process.start" in events
+    assert "process.success" in events

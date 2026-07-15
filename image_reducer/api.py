@@ -26,7 +26,8 @@ from .config import RESAMPLE_CHOICES, ReduceConfig
 from .dataset import IMAGE_EXTS, process_dataset, process_folder
 from .geometry import ResizeTransform
 from .pipeline import process_for_inference
-from .registry import Registry
+from .audit import AuditLog
+from .registry import Registry, default_data_dir
 from .runner import JobManager
 from .service import PathSafetyError, detect_mode, validate_paths
 
@@ -37,7 +38,8 @@ app = FastAPI(
 )
 
 registry = Registry()
-manager = JobManager(registry)
+audit = AuditLog(default_data_dir() / "audit.log.jsonl")
+manager = JobManager(registry, audit=audit)
 _WEBUI = Path(__file__).resolve().parent / "webui"
 
 
@@ -77,7 +79,13 @@ def _preprocess(upload_bytes: bytes, config: ReduceConfig) -> Tuple[bytes, Resiz
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "audit": audit.status()}
+
+
+@app.get("/api/audit/status")
+def audit_status() -> dict:
+    """Estado del log de auditoría. La UI lo consulta para avisar si el log falla."""
+    return audit.status()
 
 
 @app.post("/infer/preprocess", response_class=Response)
@@ -86,6 +94,7 @@ async def infer_preprocess(
     config: ReduceConfig = Depends(_config_from_query),
 ) -> Response:
     png, transform = _preprocess(await file.read(), config)
+    audit.log("infer.preprocess", filename=file.filename, config=config.to_dict())
     return Response(
         content=png, media_type="image/png",
         headers={"X-Reducer-Transform": json.dumps(transform.to_dict())},
@@ -98,6 +107,7 @@ async def infer_preprocess_json(
     config: ReduceConfig = Depends(_config_from_query),
 ) -> JSONResponse:
     png, transform = _preprocess(await file.read(), config)
+    audit.log("infer.preprocess_json", filename=file.filename, config=config.to_dict())
     return JSONResponse({
         "transform": transform.to_dict(),
         "image_base64": base64.b64encode(png).decode("ascii"),
@@ -225,17 +235,22 @@ def jobs_cancel(job_id: str) -> dict:
 
 @app.patch("/api/jobs/{job_id}")
 def jobs_update(job_id: str, patch: JobPatch) -> dict:
-    updated = registry.update_job(job_id, patch.model_dump(exclude_none=True))
+    fields = patch.model_dump(exclude_none=True)
+    updated = registry.update_job(job_id, fields)
     if not updated:
         raise HTTPException(404, "Job no encontrado")
+    audit.log("job.update", job_id=job_id, fields=fields)
     return updated
 
 
 @app.delete("/api/jobs/{job_id}")
 def jobs_delete(job_id: str, delete_files: bool = Query(False)) -> dict:
+    job = registry.get_job(job_id)
     ok = registry.delete_job(job_id, delete_files)
     if not ok:
         raise HTTPException(404, "Job no encontrado")
+    audit.log("job.delete", job_id=job_id, files_deleted=delete_files,
+              output=(job or {}).get("output"))
     return {"deleted": job_id, "files_deleted": delete_files}
 
 
@@ -263,7 +278,9 @@ def presets_create(req: PresetCreate) -> dict:
         ReduceConfig.from_dict(req.config)  # valida
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"Configuración inválida: {e}")
-    return registry.create_preset(req.name, req.config)
+    preset = registry.create_preset(req.name, req.config)
+    audit.log("preset.create", preset_id=preset["id"], name=req.name)
+    return preset
 
 
 @app.patch("/api/presets/{preset_id}")
@@ -277,6 +294,7 @@ def presets_update(preset_id: str, patch: PresetPatch) -> dict:
     updated = registry.update_preset(preset_id, body)
     if not updated:
         raise HTTPException(404, "Preset no encontrado")
+    audit.log("preset.update", preset_id=preset_id, fields=list(body.keys()))
     return updated
 
 
@@ -284,6 +302,7 @@ def presets_update(preset_id: str, patch: PresetPatch) -> dict:
 def presets_delete(preset_id: str) -> dict:
     if not registry.delete_preset(preset_id):
         raise HTTPException(404, "Preset no encontrado")
+    audit.log("preset.delete", preset_id=preset_id)
     return {"deleted": preset_id}
 
 

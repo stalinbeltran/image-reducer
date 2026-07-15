@@ -89,6 +89,8 @@
   <h1>image-reducer</h1>
   <span class="tag">reducción · gris · blur — estandarización para detección de texto</span>
 </header>
+<div id="auditBanner" style="display:none; padding:10px 22px; background:#3a2f0e;
+     color:#fde68a; font-size:13px; border-bottom:1px solid var(--line);"></div>
 
 <main>
   <!-- ================= Nuevo procesamiento ================= -->
@@ -340,7 +342,7 @@ function pollJob(id){
       }else{
         msg.className='msg err'; msg.textContent=job.error||'Error en el procesamiento.';
       }
-      loadJobs();
+      loadJobs(); checkAudit();
     }
   }, 500);
 }
@@ -397,8 +399,21 @@ async function delJob(id, withFiles){
   await loadJobs();
 }
 
+/* ---------- audit log health ---------- */
+async function checkAudit(){
+  try{
+    const s = await api('/api/audit/status');
+    const b=$('auditBanner');
+    if(s && !s.ok){
+      b.style.display='block';
+      b.textContent=`⚠ Log de auditoría con problemas: ${s.last_error||''} (descartadas: ${s.dropped}). Revisa ${s.path}`;
+    }else{ b.style.display='none'; }
+  }catch(e){ /* si el propio status falla, no romper la UI */ }
+}
+setInterval(checkAudit, 15000);
+
 /* ---------- init ---------- */
-loadPresets(); loadJobs();
+loadPresets(); loadJobs(); checkAudit();
 </script>
 </body>
 </html>

@@ -79,6 +79,21 @@ La app web (servida en `/`) permite:
 
 El registro se persiste en `IMAGE_REDUCER_DATA` (por defecto `<repo>/.appdata/`).
 
+### Log de auditoría
+
+Cada operación (proceso, cancelación, CRUD de jobs/presets, inferencia) se
+anota en `IMAGE_REDUCER_DATA/audit.log.jsonl`, una línea JSON por evento:
+
+- **Append-only**: siempre se abre en modo `append`; una escritura nunca
+  sobrescribe a otra. El código **nunca lo borra ni lo trunca** — si el
+  administrador quiere vaciarlo, debe hacerlo manualmente.
+- **Asíncrono**: las peticiones encolan el evento y continúan; un único hilo
+  escritor vuelca la cola al disco. Si el log se bloquea, el proceso principal
+  **no se detiene** (la entrada se descarta y se cuenta).
+- **Se informa a la app**: `GET /api/audit/status` devuelve
+  `{ok, last_error, written, dropped, queued, path}`. Si `ok` es `false`, la UI
+  muestra un banner de aviso con el error.
+
 ## API HTTP
 
 | Método | Ruta                       | Uso                                                            |
@@ -91,6 +106,7 @@ El registro se persiste en `IMAGE_REDUCER_DATA` (por defecto `<repo>/.appdata/`)
 | POST   | `/api/process`             | lanza el job en segundo plano; devuelve el job en `running`   |
 | GET/PATCH/DELETE | `/api/jobs[/{id}]` | CRUD del registro; el GET incluye `status` y `progress` en vivo |
 | POST   | `/api/jobs/{id}/cancel`    | cancela un job en ejecución (409 si ya terminó)               |
+| GET    | `/api/audit/status`        | estado del log de auditoría (para avisar si falla)            |
 | GET/POST/PATCH/DELETE | `/api/presets[/{id}]` | CRUD de presets de configuración                       |
 | POST   | `/datasets/process`, `/folders/process` | endpoints legados por lotes (sin registro)       |
 

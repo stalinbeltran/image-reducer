@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .audit import AuditLog
 from .config import ReduceConfig
 from .registry import Registry
 from .service import count_items, detect_mode, run_job, validate_paths
@@ -22,13 +23,21 @@ class JobCancelled(Exception):
 
 
 class JobManager:
-    def __init__(self, registry: Registry, max_workers: int = 2) -> None:
+    def __init__(self, registry: Registry, audit: Optional[AuditLog] = None,
+                 max_workers: int = 2) -> None:
         self.registry = registry
+        self.audit = audit
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._live: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         # Jobs que quedaron 'running' de una sesión previa ya no lo están.
-        self.registry.mark_stale_running()
+        stale = self.registry.mark_stale_running()
+        if stale and self.audit:
+            self.audit.log("jobs.mark_stale", count=stale)
+
+    def _audit(self, event: str, **fields: Any) -> None:
+        if self.audit:
+            self.audit.log(event, **fields)
 
     def start(
         self,
@@ -63,6 +72,9 @@ class JobManager:
             self._live[job["id"]] = {"done": 0, "total": total,
                                      "status": "running", "cancel": threading.Event()}
 
+        self._audit("process.start", job_id=job["id"], mode=mode,
+                    input=job["input"], output=job["output"], total=total,
+                    config=config.to_dict(), label=label)
         self._executor.submit(
             self._run, job["id"], input_path, output_dir, config, mode, recursive
         )
@@ -75,7 +87,8 @@ class JobManager:
             if not live:
                 return False
             live["cancel"].set()
-            return True
+        self._audit("process.cancel_requested", job_id=job_id)
+        return True
 
     def _run(self, job_id, input_path, output_dir, config, mode, recursive) -> None:
         with self._lock:
@@ -97,6 +110,8 @@ class JobManager:
                 job_id, status="success", summary=summary,
                 progress={"done": total, "total": total},
             )
+            self._audit("process.success", job_id=job_id, images=total,
+                        output=str(Path(output_dir).resolve()))
         except JobCancelled:
             with self._lock:
                 live = self._live.get(job_id) or {}
@@ -105,8 +120,11 @@ class JobManager:
                 job_id, status="cancelled", progress=progress,
                 error="Cancelado por el usuario. Se conservan los archivos ya escritos.",
             )
+            self._audit("process.cancelled", job_id=job_id, done=progress["done"],
+                        total=progress["total"])
         except Exception as e:  # noqa: BLE001 - se registra en el job
             self.registry.set_job_state(job_id, status="error", error=str(e))
+            self._audit("process.error", job_id=job_id, error=str(e))
         finally:
             with self._lock:
                 self._live.pop(job_id, None)
