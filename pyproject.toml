@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-reducer"
+version = "0.1.0"
+description = "Reduce y estandariza imágenes para entrenar detección de texto (dataset + inferencia)."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "Pillow>=9.1",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.22",
+    "python-multipart>=0.0.6",
+]
+dev = [
+    "pytest>=7",
+]
+
+[project.scripts]
+image-reducer = "image_reducer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["image_reducer*"]
