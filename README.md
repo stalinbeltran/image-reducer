@@ -68,6 +68,9 @@ La app web (servida en `/`) permite:
 - **Procesamiento en segundo plano con barra de progreso**: `/api/process`
   responde de inmediato con el job en estado `running`; la UI hace polling y
   muestra el avance `done/total` tanto en el panel como en la fila del registro.
+- **Cancelación**: un botón "Cancelar" detiene el job en curso entre imágenes
+  (cancelación cooperativa). Los archivos ya escritos se conservan; el job queda
+  en estado `cancelled` con su conteo parcial.
 - **Registro de datasets generados**: cada procesamiento queda guardado con su
   origen, destino, config, modo, estado, progreso y conteos, y se muestra en una
   tabla.
@@ -87,6 +90,7 @@ El registro se persiste en `IMAGE_REDUCER_DATA` (por defecto `<repo>/.appdata/`)
 | GET    | `/api/fs/inspect`          | autodetecta el modo de una ruta (image/dataset/folder)        |
 | POST   | `/api/process`             | lanza el job en segundo plano; devuelve el job en `running`   |
 | GET/PATCH/DELETE | `/api/jobs[/{id}]` | CRUD del registro; el GET incluye `status` y `progress` en vivo |
+| POST   | `/api/jobs/{id}/cancel`    | cancela un job en ejecución (409 si ya terminó)               |
 | GET/POST/PATCH/DELETE | `/api/presets[/{id}]` | CRUD de presets de configuración                       |
 | POST   | `/datasets/process`, `/folders/process` | endpoints legados por lotes (sin registro)       |
 

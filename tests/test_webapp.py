@@ -138,6 +138,34 @@ def test_api_process_and_jobs(tmp_path, monkeypatch):
     assert client.get("/api/jobs").json()["jobs"] == []
 
 
+def test_api_cancel_job(tmp_path, monkeypatch):
+    src = tmp_path / "imgs"
+    src.mkdir()
+    for i in range(40):
+        Image.new("RGB", (600, 400), (i, i, i)).save(src / f"{i:03d}.png")
+    out = tmp_path / "out"
+
+    client = _client(tmp_path, monkeypatch)
+    r = client.post("/api/process", json={
+        "input": str(src), "output": str(out),
+        "config": {"width": 256, "height": 256, "blur_radius": 1.5}})
+    job = r.json()
+    assert job["status"] == "running"
+
+    # cancelar de inmediato
+    c = client.post(f"/api/jobs/{job['id']}/cancel")
+    assert c.status_code == 200
+
+    done = _wait_done(client, job["id"])
+    assert done["status"] == "cancelled"
+    # se procesaron menos imágenes que el total (cancelación efectiva)
+    n_out = len(list(out.glob("*.png"))) if out.exists() else 0
+    assert n_out < 40
+
+    # cancelar un job ya terminado -> 409
+    assert client.post(f"/api/jobs/{job['id']}/cancel").status_code == 409
+
+
 def test_api_fs_inspect(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     img = tmp_path / "z.png"

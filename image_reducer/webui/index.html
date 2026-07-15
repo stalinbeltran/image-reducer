@@ -50,6 +50,7 @@
   .msg { margin-top:12px; padding:10px 12px; border-radius:6px; font-size:13px; display:none; }
   .msg.err{ background:#3b1111; color:#fecaca; display:block; }
   .msg.ok{ background:#0f2e18; color:#bbf7d0; display:block; }
+  .msg.warn{ background:#3a2f0e; color:#fde68a; display:block; }
   table { width:100%; border-collapse:collapse; }
   th,td { text-align:left; padding:8px 8px; border-bottom:1px solid var(--line);
           font-size:12px; vertical-align:top; }
@@ -286,6 +287,16 @@ function progressBar(p){
   const pct = total ? Math.round(done/total*100) : 0;
   return `<div class="bar"><i style="width:${pct}%"></i></div><div class="hint">${done}/${total} (${pct}%)</div>`;
 }
+function runningPanel(job){
+  return `<div class="inline" style="justify-content:space-between">
+            <span>Procesando…</span>
+            <button class="sm" onclick="cancelJob('${job.id}')">Cancelar</button>
+          </div>${progressBar(job.progress)}`;
+}
+async function cancelJob(id){
+  try{ await api('/api/jobs/'+id+'/cancel',{method:'POST'}); }
+  catch(e){ /* puede haber terminado justo antes */ }
+}
 async function process(){
   const input=$('src').value.trim(), output=$('dst').value.trim();
   const msg=$('procMsg'); msg.className='msg'; msg.textContent='';
@@ -301,7 +312,7 @@ async function process(){
     $('goBtn').disabled=false; $('goSpin').innerHTML=''; return;
   }
   msg.className='msg'; msg.style.display='block';
-  msg.innerHTML='Procesando… '+progressBar(job.progress);
+  msg.innerHTML=runningPanel(job);
   await loadJobs();
   pollJob(job.id);
 }
@@ -314,7 +325,7 @@ function pollJob(id){
     const msg=$('procMsg');
     if(job.status==='running'){
       msg.className='msg'; msg.style.display='block';
-      msg.innerHTML='Procesando… '+progressBar(job.progress);
+      msg.innerHTML=runningPanel(job);
       loadJobs();
     }else{
       clearInterval(pollTimer);
@@ -324,6 +335,8 @@ function pollJob(id){
         msg.className='msg ok';
         msg.textContent=`Procesado (${job.mode}): ${s.images||0} imágenes → ${job.output}`;
         $('label').value='';
+      }else if(job.status==='cancelled'){
+        msg.className='msg warn'; msg.textContent=job.error||'Cancelado.';
       }else{
         msg.className='msg err'; msg.textContent=job.error||'Error en el procesamiento.';
       }
@@ -346,9 +359,13 @@ function renderJobs(jobs){
       stateCell = progressBar(j.progress);
     }else if(j.status==='error'){
       stateCell = `<span class="status error">error</span><div class="hint">${(j.error||'').slice(0,60)}</div>`;
+    }else if(j.status==='cancelled'){
+      stateCell = `<span class="status">cancelado</span><div class="hint">${(j.progress?j.progress.done:0)} img parciales</div>`;
     }else{
       stateCell = `<div class="hint">${s.images||0} img${s.masks?(' · '+s.masks+' masks'):''}</div>`;
     }
+    const cancelBtn = j.status==='running'
+      ? `<button class="sm" onclick="cancelJob('${j.id}')">Cancelar</button> ` : '';
     return `<tr>
       <td>
         <input type="text" value="${(j.label||'').replace(/"/g,'&quot;')}" data-id="${j.id}"
@@ -359,7 +376,7 @@ function renderJobs(jobs){
       <td class="path">${j.input}</td>
       <td class="path">${j.output}</td>
       <td>
-        <button class="sm danger" onclick="delJob('${j.id}',false)">Quitar</button>
+        ${cancelBtn}<button class="sm danger" onclick="delJob('${j.id}',false)">Quitar</button>
         <button class="sm danger" onclick="delJob('${j.id}',true)">+archivos</button>
       </td>
     </tr>`;

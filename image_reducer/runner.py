@@ -17,6 +17,10 @@ from .registry import Registry
 from .service import count_items, detect_mode, run_job, validate_paths
 
 
+class JobCancelled(Exception):
+    """El usuario canceló el job en curso (entre imágenes)."""
+
+
 class JobManager:
     def __init__(self, registry: Registry, max_workers: int = 2) -> None:
         self.registry = registry
@@ -56,15 +60,31 @@ class JobManager:
             "progress": {"done": 0, "total": total},
         })
         with self._lock:
-            self._live[job["id"]] = {"done": 0, "total": total, "status": "running"}
+            self._live[job["id"]] = {"done": 0, "total": total,
+                                     "status": "running", "cancel": threading.Event()}
 
         self._executor.submit(
             self._run, job["id"], input_path, output_dir, config, mode, recursive
         )
         return self.overlay(job)
 
+    def cancel(self, job_id: str) -> bool:
+        """Solicita cancelar un job en ejecución. Devuelve True si estaba corriendo."""
+        with self._lock:
+            live = self._live.get(job_id)
+            if not live:
+                return False
+            live["cancel"].set()
+            return True
+
     def _run(self, job_id, input_path, output_dir, config, mode, recursive) -> None:
+        with self._lock:
+            live = self._live.get(job_id)
+            cancel = live["cancel"] if live else threading.Event()
+
         def on_progress(done: int, total: int) -> None:
+            if cancel.is_set():
+                raise JobCancelled()
             with self._lock:
                 live = self._live.get(job_id)
                 if live is not None:
@@ -77,10 +97,17 @@ class JobManager:
                 job_id, status="success", summary=summary,
                 progress={"done": total, "total": total},
             )
+        except JobCancelled:
             with self._lock:
-                self._live.pop(job_id, None)
+                live = self._live.get(job_id) or {}
+                progress = {"done": live.get("done", 0), "total": live.get("total", 0)}
+            self.registry.set_job_state(
+                job_id, status="cancelled", progress=progress,
+                error="Cancelado por el usuario. Se conservan los archivos ya escritos.",
+            )
         except Exception as e:  # noqa: BLE001 - se registra en el job
             self.registry.set_job_state(job_id, status="error", error=str(e))
+        finally:
             with self._lock:
                 self._live.pop(job_id, None)
 

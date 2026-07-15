@@ -214,6 +214,15 @@ def jobs_get(job_id: str) -> dict:
     return manager.overlay(job)
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+def jobs_cancel(job_id: str) -> dict:
+    if not registry.get_job(job_id):
+        raise HTTPException(404, "Job no encontrado")
+    if not manager.cancel(job_id):
+        raise HTTPException(409, "El job no está en ejecución.")
+    return {"cancelling": job_id}
+
+
 @app.patch("/api/jobs/{job_id}")
 def jobs_update(job_id: str, patch: JobPatch) -> dict:
     updated = registry.update_job(job_id, patch.model_dump(exclude_none=True))
