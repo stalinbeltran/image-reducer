@@ -29,18 +29,34 @@ pip install -e .          # núcleo + CLI (solo requiere Pillow)
 pip install -e ".[api]"   # + servidor HTTP (FastAPI/uvicorn)
 ```
 
+> **Nota (PATH):** pip instala los comandos `image-reducer` e
+> `image-reducer-serve` en la carpeta `Scripts` de tu Python, que en Windows
+> puede no estar en el `PATH` (verás un aviso de pip al instalar). Si al
+> ejecutarlos sale *«no se reconoce como un comando»*, usa la forma equivalente
+> que **no depende del PATH**:
+>
+> ```bash
+> python -m image_reducer.serve        # en vez de image-reducer-serve
+> python -m image_reducer dataset ...  # en vez de image-reducer dataset ...
+> ```
+>
+> (o añade esa carpeta `Scripts` al `PATH`).
+
 ## CLI
 
 ```bash
 # Dataset con anotaciones (re-mapea labels.jsonl, labels/*.json y masks/)
-image-reducer dataset ./data/in ./data/out --width 320 --height 320
+python -m image_reducer dataset ./data/in ./data/out --width 320 --height 320
 
 # Carpeta plana de imágenes (sin labels) -> escribe también transforms.jsonl
-image-reducer folder ./imgs ./imgs_out --blur 0.8 --recursive
+python -m image_reducer folder ./imgs ./imgs_out --blur 0.8 --recursive
 
 # Una sola imagen (inferencia) e imprime el transform
-image-reducer image foto.png salida.png --width 256 --height 256 --print-transform
+python -m image_reducer image foto.png salida.png --width 256 --height 256 --print-transform
 ```
+
+> Si añadiste la carpeta `Scripts` al `PATH`, puedes usar el alias corto
+> `image-reducer <subcomando> ...` en lugar de `python -m image_reducer ...`.
 
 Opciones comunes: `--width`, `--height`, `--stretch` (estira en vez de
 letterbox), `--no-grayscale`, `--blur R`, `--normalize`, `--pad-color 0-255`,
@@ -53,8 +69,9 @@ letterbox), `--no-grayscale`, `--blur R`, `--normalize`, `--pad-color 0-255`,
 ## App web
 
 ```bash
-image-reducer-serve            # o: uvicorn image_reducer.api:app --reload
-# abre http://127.0.0.1:8000
+python -m image_reducer.serve        # abre http://127.0.0.1:8000
+# alternativas: image-reducer-serve (si Scripts está en PATH)
+#               uvicorn image_reducer.api:app --reload
 ```
 
 La app web (servida en `/`) permite:
